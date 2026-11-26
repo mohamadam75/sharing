@@ -7,7 +7,7 @@ export async function onRequestPost({request,env}){
  const file=form.get('file');if(!file||typeof file.arrayBuffer!=='function')return response({error:'فایلی انتخاب نشده است'},400);
  if(file.size<1||file.size>50*1024*1024)return response({error:'حجم فایل باید حداکثر ۵۰ مگابایت باشد'},413);
  const id=crypto.randomUUID(),key='uploads/'+id;
- const name=String(file.name||'file').replace(/[\\\\/\\x00-\\x1f]/g,'_').slice(0,240);
+ const name=String(file.name||'file').split('').map(c=>(c==='/'||c==='\\'||c.charCodeAt(0)<32)?'_':c).join('').slice(0,240);
  const type=(file.type||'application/octet-stream').slice(0,120);
  let bucket;try{bucket=storageConfig(env).bucket}catch{return response({error:'اتصال فضای ذخیره‌سازی هنوز تنظیم نشده است'},503)}
  let uploaded;
