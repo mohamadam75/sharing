@@ -2,11 +2,6 @@ name = "my-flash"
 compatibility_date = "2026-11-26"
 pages_build_output_dir = "./public"
 
-[[d1_databases]]
-binding = "DB"
-database_name = "my-flash-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
-
-[[r2_buckets]]
-binding = "BUCKET"
-bucket_name = "my-flash-files"
+# Bindings are configured in Cloudflare Pages > Settings > Functions.
+# D1 binding name: DB
+# R2 binding name: BUCKET
