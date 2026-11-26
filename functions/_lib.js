@@ -10,4 +10,20 @@ export function clearCookie(){return 'flash_session=; Path=/; HttpOnly; Secure; 
 export async function currentUser(request,env){const raw=request.headers.get('Cookie')||'';const token=raw.split(';').map(x=>x.trim()).find(x=>x.startsWith('flash_session='))?.slice(14);if(!token)return null;const tokenHash=await hashText(token);const row=await env.DB.prepare('SELECT users.id, users.username FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=? AND sessions.expires_at>?').bind(tokenHash,new Date().toISOString()).first();return row||null}
 export function randomToken(){const bytes=crypto.getRandomValues(new Uint8Array(32));return b64(bytes).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'')}
 export function isSameOrigin(request){const origin=request.headers.get('Origin');if(!origin)return true;return origin===new URL(request.url).origin}
+
+export function storageConfig(env){
+  const base=String(env.SUPABASE_URL||'').replace(/\\/$/,'');
+  const key=env.SUPABASE_SERVICE_ROLE_KEY;
+  const bucket=env.SUPABASE_BUCKET||'my-flash-files';
+  if(!base||!key||!bucket)throw new Error('storage_not_configured');
+  return {base,key,bucket};
+}
+export async function storageRequest(env,path,options={}){
+  const {base,key}=storageConfig(env);
+  const headers=new Headers(options.headers||{});
+  headers.set('apikey',key);
+  headers.set('Authorization','Bearer '+key);
+  headers.set('cache-control','no-store');
+  return fetch(base+'/storage/v1'+path,{...options,headers});
+}
 export {json};
