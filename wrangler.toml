@@ -2,6 +2,7 @@ name = "my-flash"
 compatibility_date = "2026-11-26"
 pages_build_output_dir = "./public"
 
-# Bindings are configured in Cloudflare Pages > Settings > Functions.
-# D1 binding name: DB
-# R2 binding name: BUCKET
+# Cloudflare Pages bindings:
+# D1 database binding: DB
+# Environment variables/secrets:
+# SUPABASE_URL, SUPABASE_BUCKET, SUPABASE_SERVICE_ROLE_KEY
