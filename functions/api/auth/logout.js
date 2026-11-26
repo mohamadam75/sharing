@@ -1,0 +1,2 @@
+import {response,currentUser,hashText,clearCookie,isSameOrigin} from '../../_lib.js';
+export async function onRequestPost({request,env}){if(!isSameOrigin(request))return response({error:'درخواست نامعتبر است'},403);const raw=request.headers.get('Cookie')||'';const token=raw.split(';').map(x=>x.trim()).find(x=>x.startsWith('flash_session='))?.slice(14);if(token)await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await hashText(token)).run();return response({ok:true},200,{'set-cookie':clearCookie()})}
