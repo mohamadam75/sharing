@@ -12,7 +12,7 @@ export function randomToken(){const bytes=crypto.getRandomValues(new Uint8Array(
 export function isSameOrigin(request){const origin=request.headers.get('Origin');if(!origin)return true;return origin===new URL(request.url).origin}
 
 export function storageConfig(env){
-  const base=String(env.SUPABASE_URL||'').replace(/\\/$/,'');
+  let base=String(env.SUPABASE_URL||''); while(base.endsWith('/'))base=base.slice(0,-1);
   const key=env.SUPABASE_SERVICE_ROLE_KEY;
   const bucket=env.SUPABASE_BUCKET||'my-flash-files';
   if(!base||!key||!bucket)throw new Error('storage_not_configured');
