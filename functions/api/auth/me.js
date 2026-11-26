@@ -1,0 +1,2 @@
+import {response,currentUser} from '../../_lib.js';
+export async function onRequestGet({request,env}){const user=await currentUser(request,env);if(!user)return response({error:'وارد نشده‌اید'},401);return response({user})}
