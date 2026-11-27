@@ -37,6 +37,7 @@ jobs:
           const report = { base: BASE, started_at: new Date().toISOString(), tests: [], user_ids: [], file_ids: [], error: null };
           let cookieA = null, cookieB = null, userA = null, userB = null;
           const fileIds = [];
+          let largeFileId = null;
 
           function record(name, ok, detail = '') {
             report.tests.push({ name, ok, detail });
@@ -171,16 +172,32 @@ jobs:
               });
             }
 
-            if (fileIds.length === 2 && userA && cookieA) {
+            if (userA && cookieA) {
+              await run('exactly 50MB file upload succeeds', async () => {
+                const bytes = new Uint8Array(50 * 1024 * 1024);
+                bytes[0] = 77; bytes[bytes.length - 1] = 88;
+                const form = new FormData();
+                form.append('file', new Blob([bytes], { type: 'application/octet-stream' }), 'e2e-' + suffix + '-50mb.bin');
+                const r = await call('/api/files', { method: 'POST', cookie: cookieA, formBody: form });
+                const d = await readJson(r);
+                check(r.status === 201 && d.id, '50MB upload failed: HTTP ' + r.status + ' ' + JSON.stringify(d));
+                largeFileId = d.id; report.file_ids.push(d.id);
+                return 'uploaded exactly 52,428,800 bytes';
+              });
+            }
+
+            if (fileIds.length === 2 && largeFileId && userA && cookieA) {
               await run('file list exposes uploads to owner', async () => {
                 const r = await call('/api/files', { cookie: cookieA });
                 const d = await readJson(r);
                 check(r.status === 200 && Array.isArray(d.files), 'list failed: ' + r.status);
-                for (const id of fileIds) {
+                for (const id of [...fileIds, largeFileId]) {
                   const f = d.files.find(x => x.id === id);
                   check(f && f.owner_id === userA.id, 'file metadata missing or owner mismatch: ' + id);
                 }
-                return 'both uploads listed with correct owner';
+                const large = d.files.find(x => x.id === largeFileId);
+                check(large.size === 50 * 1024 * 1024, '50MB metadata size mismatch');
+                return 'two small files and exact 50MB file listed with correct owner';
               });
 
               await run('download returns exact file bytes', async () => {
@@ -206,8 +223,8 @@ jobs:
                 await run('second authenticated user can see shared files', async () => {
                   const r = await call('/api/files', { cookie: cookieB });
                   const d = await readJson(r);
-                  check(r.status === 200 && fileIds.every(id => d.files.some(f => f.id === id)), 'shared files not visible to user B');
-                  return 'user B sees both files';
+                  check(r.status === 200 && [...fileIds, largeFileId].every(id => d.files.some(f => f.id === id)), 'shared files not visible to user B');
+                  return 'user B sees all three files';
                 });
 
                 await run('second authenticated user can download a shared file', async () => {
@@ -229,24 +246,33 @@ jobs:
                 });
               }
 
+              await run('private Supabase object is not publicly readable', async () => {
+                const publicUrl = 'https://ptttnaerduwmpdipzroo.supabase.co/storage/v1/object/public/my-flash-files/uploads/' + encodeURIComponent(fileIds[0]);
+                const r = await fetch(publicUrl, { redirect: 'manual' });
+                check(r.status !== 200, 'object was publicly readable (HTTP 200)');
+                return 'anonymous public-object request returned HTTP ' + r.status;
+              });
+
+              await run('download of exact 50MB file succeeds', async () => {
+                const r = await call('/api/files/' + encodeURIComponent(largeFileId), { cookie: cookieA });
+                const bytes = Buffer.from(await r.arrayBuffer());
+                check(r.status === 200, '50MB download HTTP ' + r.status);
+                check(bytes.length === 50 * 1024 * 1024, 'download size mismatch: ' + bytes.length);
+                check(bytes[0] === 77 && bytes[bytes.length - 1] === 88, 'downloaded bytes differ');
+                return 'downloaded exactly 52,428,800 bytes';
+              });
+
               await run('owner can delete own files', async () => {
-                for (const id of fileIds) {
+                for (const id of [...fileIds, largeFileId]) {
                   const r = await call('/api/files/' + encodeURIComponent(id), { method: 'DELETE', cookie: cookieA });
                   check(r.status === 200, 'owner delete failed for ' + id + ': HTTP ' + r.status);
                 }
                 const r = await call('/api/files', { cookie: cookieA });
                 const d = await readJson(r);
-                check(fileIds.every(id => !d.files.some(f => f.id === id)), 'deleted file metadata still listed');
-                return 'both files deleted and absent from list';
+                check([...fileIds, largeFileId].every(id => !d.files.some(f => f.id === id)), 'deleted file metadata still listed');
+                return 'all three files deleted and absent from list';
               });
 
-              await run('private Supabase bucket is not publicly readable', async () => {
-                const projectUrl = 'https://ptttnaerduwmpdipzroo.supabase.co';
-                const publicUrl = projectUrl + '/storage/v1/object/public/my-flash-files/uploads/' + encodeURIComponent(fileIds[0]);
-                const r = await fetch(publicUrl, { redirect: 'manual' });
-                check(r.status !== 200, 'object was publicly readable (HTTP 200)');
-                return 'unauthenticated public-object request returned HTTP ' + r.status;
-              });
             }
 
             if (userA && cookieA) {
@@ -262,7 +288,7 @@ jobs:
             report.error ||= String(e?.message || e);
           } finally {
             if (userA && cookieA) {
-              for (const id of fileIds) {
+              for (const id of [...fileIds, ...(largeFileId ? [largeFileId] : [])]) {
                 try { await call('/api/files/' + encodeURIComponent(id), { method: 'DELETE', cookie: cookieA }); } catch {}
               }
               try { await call('/api/auth/logout', { method: 'POST', cookie: cookieA }); } catch {}
