@@ -3,7 +3,7 @@ const FALLBACK_HTML = "<!doctype html>\n<html lang=\"fa\" dir=\"rtl\">\n<head>\n
 const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
 const json = (data,status=200,headers={}) => new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store',...headers}});
 async function hashText(s){return b64(await crypto.subtle.digest('SHA-256',enc.encode(s)))}
-async function passwordHash(password,salt){const key=await crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:enc.encode(salt),iterations:150000,hash:'SHA-256'},key,256);return b64(bits)}
+async function passwordHash(password,salt){const key=await crypto.subtle.importKey('raw',enc.encode(password),{name:'PBKDF2'},false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:enc.encode(salt),iterations:150000,hash:'SHA-256'},key,256);return b64(bits)}
 function randomToken(){const bytes=crypto.getRandomValues(new Uint8Array(32));return b64(bytes).replaceAll('+','-').replaceAll('/','_').replaceAll('=','')}
 function cookie(name,value,maxAge){return name+'='+value+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age='+maxAge}
 function clearCookie(){return 'flash_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'}
