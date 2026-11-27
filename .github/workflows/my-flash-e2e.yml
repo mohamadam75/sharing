@@ -1,4 +1,5 @@
 name: My Flash production E2E
+# Production regression check after the Cloudflare PBKDF2 compatibility fix
 
 on:
   push:
