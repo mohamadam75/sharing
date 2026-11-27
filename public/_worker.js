@@ -16,12 +16,11 @@ function safeName(value){return String(value||'file').split('').map(c=>(c==='/'|
 async function handle(request,env){
  const url=new URL(request.url),path=url.pathname,method=request.method;
  if(path==='/api/health'&&method==='GET'){
-  const h={assetsBinding:!!env.ASSETS,d1Binding:!!env.DB,storageConfigured:!!storageConfig(env)};
-  try{const row=await env.DB.prepare('SELECT 1 AS ok').first();h.d1Query=!!row;}catch(e){h.d1Query=false;h.d1Error=String(e?.name||'Error');}
-  try{randomToken();h.randomToken=true;}catch(e){h.randomToken=false;h.randomTokenError=String(e?.name||'Error');}
-  try{await passwordHash('diagnostic','health-salt');h.passwordHash100k=true;}catch(e){h.passwordHash100k=false;h.passwordHashError=String(e?.name||'Error');}
-  try{crypto.randomUUID();h.cryptoUUID=true;}catch(e){h.cryptoUUID=false;h.cryptoUUIDError=String(e?.name||'Error');}
-  return json(h);
+  try{
+   if(!env.DB||!storageConfig(env))return json({ok:false},503);
+   const row=await env.DB.prepare('SELECT 1 AS ok').first();
+   return row?json({ok:true}):json({ok:false},503);
+  }catch{return json({ok:false},503);}
  }
  if(path.startsWith('/api/')){
   if(path==='/api/auth/register'&&method==='POST'){
