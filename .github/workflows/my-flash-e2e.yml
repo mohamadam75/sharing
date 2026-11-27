@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/my-flash-e2e.yml"
+      - "public/_worker.js"
+      - "public/index.html"
   workflow_dispatch:
 
 permissions:
@@ -81,6 +83,16 @@ jobs:
               const r = await call('/api/files');
               check(r.status === 401, 'expected 401, got ' + r.status);
               return 'HTTP 401';
+            });
+
+            await run('production health checks bindings and crypto runtime', async () => {
+              const r = await call('/api/health');
+              const d = await readJson(r);
+              check(r.status === 200, 'health HTTP ' + r.status);
+              check(d.d1Binding && d.d1Query, 'D1 binding/query failed: ' + JSON.stringify(d));
+              check(d.randomToken && d.cryptoUUID, 'crypto runtime failed: ' + JSON.stringify(d));
+              check(d.passwordHash150k, 'PBKDF2 150k failed: ' + JSON.stringify(d));
+              return JSON.stringify(d);
             });
 
             await run('user A can register', async () => {
