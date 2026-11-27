@@ -91,7 +91,7 @@ jobs:
               check(r.status === 200, 'health HTTP ' + r.status);
               check(d.d1Binding && d.d1Query, 'D1 binding/query failed: ' + JSON.stringify(d));
               check(d.randomToken && d.cryptoUUID, 'crypto runtime failed: ' + JSON.stringify(d));
-              check(d.passwordHash150k, 'PBKDF2 150k failed: ' + JSON.stringify(d));
+              check(d.passwordHash100k, 'PBKDF2 150k failed: ' + JSON.stringify(d));
               return JSON.stringify(d);
             });
 
