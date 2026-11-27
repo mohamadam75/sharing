@@ -3,7 +3,7 @@ const FALLBACK_HTML = "<!doctype html>\n<html lang=\"fa\" dir=\"rtl\">\n<head>\n
 const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
 const json = (data,status=200,headers={}) => new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store',...headers}});
 async function hashText(s){return b64(await crypto.subtle.digest('SHA-256',enc.encode(s)))}
-async function passwordHash(password,salt){const key=await crypto.subtle.importKey('raw',enc.encode(password),{name:'PBKDF2'},false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:enc.encode(salt),iterations:150000,hash:'SHA-256'},key,256);return b64(bits)}
+async function passwordHash(password,salt){const key=await crypto.subtle.importKey('raw',enc.encode(password),{name:'PBKDF2'},false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:enc.encode(salt),iterations:100000,hash:'SHA-256'},key,256);return b64(bits)}
 function randomToken(){const bytes=crypto.getRandomValues(new Uint8Array(32));return b64(bytes).replaceAll('+','-').replaceAll('/','_').replaceAll('=','')}
 function cookie(name,value,maxAge){return name+'='+value+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age='+maxAge}
 function clearCookie(){return 'flash_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'}
@@ -19,7 +19,7 @@ async function handle(request,env){
   const h={assetsBinding:!!env.ASSETS,d1Binding:!!env.DB,storageConfigured:!!storageConfig(env)};
   try{const row=await env.DB.prepare('SELECT 1 AS ok').first();h.d1Query=!!row;}catch(e){h.d1Query=false;h.d1Error=String(e?.name||'Error');}
   try{randomToken();h.randomToken=true;}catch(e){h.randomToken=false;h.randomTokenError=String(e?.name||'Error');}
-  try{await passwordHash('diagnostic','health-salt');h.passwordHash150k=true;}catch(e){h.passwordHash150k=false;h.passwordHashError=String(e?.name||'Error');}
+  try{await passwordHash('diagnostic','health-salt');h.passwordHash100k=true;}catch(e){h.passwordHash100k=false;h.passwordHashError=String(e?.name||'Error');}
   try{crypto.randomUUID();h.cryptoUUID=true;}catch(e){h.cryptoUUID=false;h.cryptoUUIDError=String(e?.name||'Error');}
   return json(h);
  }
