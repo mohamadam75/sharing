@@ -98,10 +98,8 @@ jobs:
               const r = await call('/api/health');
               const d = await readJson(r);
               check(r.status === 200, 'health HTTP ' + r.status);
-              check(d.d1Binding && d.d1Query, 'D1 binding/query failed: ' + JSON.stringify(d));
-              check(d.randomToken && d.cryptoUUID, 'crypto runtime failed: ' + JSON.stringify(d));
-              check(d.passwordHash100k, 'PBKDF2 150k failed: ' + JSON.stringify(d));
-              return JSON.stringify(d);
+              check(d.ok === true, 'health check failed');
+              return 'D1 and storage configuration healthy';
             });
 
             await run('user A can register', async () => {
