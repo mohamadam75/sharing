@@ -1,5 +1,5 @@
 name: My Flash production E2E
-# Production regression check after the Cloudflare PBKDF2 compatibility fix
+# Production regression check after the Cloudflare PBKDF2 compatibility fix and health endpoint hardening
 
 on:
   push:
