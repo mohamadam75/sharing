@@ -80,6 +80,14 @@ jobs:
               return 'HTTP 200, RTL markup present';
             });
 
+            await run('custom domain serves the same app', async () => {
+              const r = await fetch('https://flash.notpade.dpdns.org/', { redirect: 'manual' });
+              const html = await r.text();
+              check(r.status === 200, 'custom domain HTTP ' + r.status);
+              check(html.includes('My Flash') && html.includes('dir="rtl"'), 'custom domain app markup missing');
+              return 'HTTP 200 on custom domain';
+            });
+
             await run('unauthenticated file list is rejected', async () => {
               const r = await call('/api/files');
               check(r.status === 401, 'expected 401, got ' + r.status);
@@ -134,6 +142,17 @@ jobs:
               report.user_ids.push(userB.id);
               return 'created second account';
             });
+
+            if (userA && cookieA) {
+              await run('uploads larger than 50MB are rejected', async () => {
+                const form = new FormData();
+                const bytes = new Uint8Array(50 * 1024 * 1024 + 1);
+                form.append('file', new Blob([bytes], { type: 'application/octet-stream' }), 'too-large.bin');
+                const r = await call('/api/files', { method: 'POST', cookie: cookieA, formBody: form });
+                check(r.status === 413, 'expected HTTP 413, got ' + r.status);
+                return 'HTTP 413 for 50MB + 1 byte';
+              });
+            }
 
             if (userA && cookieA) {
               await run('multiple file uploads work', async () => {
@@ -191,6 +210,14 @@ jobs:
                   const d = await readJson(r);
                   check(r.status === 200 && fileIds.every(id => d.files.some(f => f.id === id)), 'shared files not visible to user B');
                   return 'user B sees both files';
+                });
+
+                await run('second authenticated user can download a shared file', async () => {
+                  const r = await call('/api/files/' + encodeURIComponent(fileIds[0]), { cookie: cookieB });
+                  const bytes = Buffer.from(await r.arrayBuffer());
+                  check(r.status === 200, 'download HTTP ' + r.status);
+                  check(bytes.toString() === 'My Flash production E2E ' + suffix + '\\n', 'shared download bytes differ');
+                  return 'user B downloaded exact file bytes';
                 });
 
                 await run('non-owner cannot delete another user file', async () => {
