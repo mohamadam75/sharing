@@ -1,0 +1,256 @@
+name: My Flash production E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/my-flash-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  production-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Test production site end to end
+        shell: bash
+        env:
+          BASE_URL: https://my-flash.pages.dev
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          node --input-type=module <<'NODE'
+          import { randomUUID } from 'node:crypto';
+
+          const BASE = process.env.BASE_URL.replace(/\/$/, '');
+          const suffix = randomUUID().replaceAll('-', '').slice(0, 10);
+          const password = 'FlashE2E-' + randomUUID() + '-Aa9!';
+          const usernameA = 'e2e-' + suffix + 'a';
+          const usernameB = 'e2e-' + suffix + 'b';
+          const report = { base: BASE, started_at: new Date().toISOString(), tests: [], user_ids: [], file_ids: [], error: null };
+          let cookieA = null, cookieB = null, userA = null, userB = null;
+          const fileIds = [];
+
+          function record(name, ok, detail = '') {
+            report.tests.push({ name, ok, detail });
+            console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail ? ' — ' + detail : ''));
+          }
+          function check(condition, message) {
+            if (!condition) throw new Error(message);
+          }
+          async function call(path, { method = 'GET', cookie, jsonBody, formBody } = {}) {
+            const headers = {};
+            if (cookie) headers.cookie = cookie;
+            if (method !== 'GET') headers.origin = BASE;
+            let body;
+            if (jsonBody !== undefined) {
+              headers['content-type'] = 'application/json';
+              body = JSON.stringify(jsonBody);
+            } else if (formBody !== undefined) body = formBody;
+            return fetch(BASE + path, { method, headers, body, redirect: 'manual' });
+          }
+          async function readJson(res) {
+            const raw = await res.text();
+            try { return JSON.parse(raw); } catch { return { raw: raw.slice(0, 300) }; }
+          }
+          function getCookie(res) {
+            const raw = res.headers.get('set-cookie') || '';
+            const pair = raw.split(';', 1)[0];
+            check(pair.startsWith('flash_session='), 'session cookie was not set');
+            return pair;
+          }
+          async function run(name, fn) {
+            try { const detail = await fn(); record(name, true, detail || ''); return true; }
+            catch (e) { record(name, false, String(e?.message || e)); report.error ||= String(e?.message || e); return false; }
+          }
+
+          try {
+            await run('homepage returns the Persian RTL app', async () => {
+              const r = await fetch(BASE + '/', { redirect: 'manual' });
+              const html = await r.text();
+              check(r.status === 200, 'HTTP ' + r.status);
+              check(html.includes('My Flash') && html.includes('dir="rtl"'), 'expected app title/RTL markup missing');
+              return 'HTTP 200, RTL markup present';
+            });
+
+            await run('unauthenticated file list is rejected', async () => {
+              const r = await call('/api/files');
+              check(r.status === 401, 'expected 401, got ' + r.status);
+              return 'HTTP 401';
+            });
+
+            await run('user A can register', async () => {
+              const r = await call('/api/auth/register', { method: 'POST', jsonBody: { username: usernameA, password } });
+              const d = await readJson(r);
+              check(r.status === 201, 'HTTP ' + r.status + ': ' + JSON.stringify(d));
+              userA = d.user; cookieA = getCookie(r);
+              check(userA?.id && userA.username === usernameA, 'registration response invalid');
+              report.user_ids.push(userA.id);
+              return 'created ' + usernameA;
+            });
+
+            if (userA) {
+              await run('user A session is valid', async () => {
+                const r = await call('/api/auth/me', { cookie: cookieA });
+                const d = await readJson(r);
+                check(r.status === 200 && d.user?.id === userA.id, 'session check failed: ' + r.status);
+                return 'authenticated as ' + usernameA;
+              });
+
+              await run('logout and login work', async () => {
+                const out = await call('/api/auth/logout', { method: 'POST', cookie: cookieA });
+                check(out.status === 200, 'logout HTTP ' + out.status);
+                const r = await call('/api/auth/login', { method: 'POST', jsonBody: { username: usernameA, password } });
+                const d = await readJson(r);
+                check(r.status === 200 && d.user?.id === userA.id, 'login failed: ' + r.status + ' ' + JSON.stringify(d));
+                cookieA = getCookie(r);
+                return 'logout then login succeeded';
+              });
+            }
+
+            await run('user B can register independently', async () => {
+              const r = await call('/api/auth/register', { method: 'POST', jsonBody: { username: usernameB, password } });
+              const d = await readJson(r);
+              check(r.status === 201, 'HTTP ' + r.status + ': ' + JSON.stringify(d));
+              userB = d.user; cookieB = getCookie(r);
+              check(userB?.id && userB.username === usernameB, 'registration response invalid');
+              report.user_ids.push(userB.id);
+              return 'created second account';
+            });
+
+            if (userA && cookieA) {
+              await run('multiple file uploads work', async () => {
+                const textBytes = Buffer.from('My Flash production E2E ' + suffix + '\n');
+                const pngBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/n8sAAAAASUVORK5CYII=', 'base64');
+                for (const [name, type, bytes] of [
+                  ['e2e-' + suffix + '.txt', 'text/plain', textBytes],
+                  ['e2e-' + suffix + '.png', 'image/png', pngBytes]
+                ]) {
+                  const form = new FormData();
+                  form.append('file', new Blob([bytes], { type }), name);
+                  const r = await call('/api/files', { method: 'POST', cookie: cookieA, formBody: form });
+                  const d = await readJson(r);
+                  check(r.status === 201 && d.id, 'upload ' + name + ' failed: ' + r.status + ' ' + JSON.stringify(d));
+                  fileIds.push(d.id); report.file_ids.push(d.id);
+                }
+                return 'uploaded text + image files';
+              });
+            }
+
+            if (fileIds.length === 2 && userA && cookieA) {
+              await run('file list exposes uploads to owner', async () => {
+                const r = await call('/api/files', { cookie: cookieA });
+                const d = await readJson(r);
+                check(r.status === 200 && Array.isArray(d.files), 'list failed: ' + r.status);
+                for (const id of fileIds) {
+                  const f = d.files.find(x => x.id === id);
+                  check(f && f.owner_id === userA.id, 'file metadata missing or owner mismatch: ' + id);
+                }
+                return 'both uploads listed with correct owner';
+              });
+
+              await run('download returns exact file bytes', async () => {
+                const r = await call('/api/files/' + encodeURIComponent(fileIds[0]), { cookie: cookieA });
+                const bytes = Buffer.from(await r.arrayBuffer());
+                check(r.status === 200, 'download HTTP ' + r.status);
+                check((r.headers.get('content-disposition') || '').includes('attachment'), 'download disposition is not attachment');
+                check(bytes.toString() === 'My Flash production E2E ' + suffix + '\n', 'download bytes differ');
+                return 'HTTP 200, exact bytes';
+              });
+
+              await run('image preview is served inline', async () => {
+                const r = await call('/api/files/' + encodeURIComponent(fileIds[1]) + '?preview=1', { cookie: cookieA });
+                const bytes = Buffer.from(await r.arrayBuffer());
+                check(r.status === 200, 'preview HTTP ' + r.status);
+                check((r.headers.get('content-type') || '').startsWith('image/png'), 'wrong preview content type');
+                check((r.headers.get('content-disposition') || '').includes('inline'), 'preview is not inline');
+                check(bytes.length > 0, 'preview body is empty');
+                return 'HTTP 200, image/png inline';
+              });
+
+              if (userB && cookieB) {
+                await run('second authenticated user can see shared files', async () => {
+                  const r = await call('/api/files', { cookie: cookieB });
+                  const d = await readJson(r);
+                  check(r.status === 200 && fileIds.every(id => d.files.some(f => f.id === id)), 'shared files not visible to user B');
+                  return 'user B sees both files';
+                });
+
+                await run('non-owner cannot delete another user file', async () => {
+                  const r = await call('/api/files/' + encodeURIComponent(fileIds[0]), { method: 'DELETE', cookie: cookieB });
+                  const d = await readJson(r);
+                  check(r.status === 403, 'expected 403, got ' + r.status + ' ' + JSON.stringify(d));
+                  const list = await call('/api/files', { cookie: cookieA });
+                  const ld = await readJson(list);
+                  check(ld.files.some(f => f.id === fileIds[0]), 'file disappeared after denied delete');
+                  return 'HTTP 403; file remained present';
+                });
+              }
+
+              await run('owner can delete own files', async () => {
+                for (const id of fileIds) {
+                  const r = await call('/api/files/' + encodeURIComponent(id), { method: 'DELETE', cookie: cookieA });
+                  check(r.status === 200, 'owner delete failed for ' + id + ': HTTP ' + r.status);
+                }
+                const r = await call('/api/files', { cookie: cookieA });
+                const d = await readJson(r);
+                check(fileIds.every(id => !d.files.some(f => f.id === id)), 'deleted file metadata still listed');
+                return 'both files deleted and absent from list';
+              });
+
+              await run('private Supabase bucket is not publicly readable', async () => {
+                const projectUrl = 'https://ptttnaerduwmpdipzroo.supabase.co';
+                const publicUrl = projectUrl + '/storage/v1/object/public/my-flash-files/uploads/' + encodeURIComponent(fileIds[0]);
+                const r = await fetch(publicUrl, { redirect: 'manual' });
+                check(r.status !== 200, 'object was publicly readable (HTTP 200)');
+                return 'unauthenticated public-object request returned HTTP ' + r.status;
+              });
+            }
+
+            if (userA && cookieA) {
+              await run('logout invalidates session', async () => {
+                const r = await call('/api/auth/logout', { method: 'POST', cookie: cookieA });
+                check(r.status === 200, 'logout HTTP ' + r.status);
+                const me = await call('/api/auth/me', { cookie: cookieA });
+                check(me.status === 401, 'expected 401 after logout, got ' + me.status);
+                return 'session revoked';
+              });
+            }
+          } catch (e) {
+            report.error ||= String(e?.message || e);
+          } finally {
+            if (userA && cookieA) {
+              for (const id of fileIds) {
+                try { await call('/api/files/' + encodeURIComponent(id), { method: 'DELETE', cookie: cookieA }); } catch {}
+              }
+              try { await call('/api/auth/logout', { method: 'POST', cookie: cookieA }); } catch {}
+            }
+            if (userB && cookieB) {
+              try { await call('/api/auth/logout', { method: 'POST', cookie: cookieB }); } catch {}
+            }
+            report.finished_at = new Date().toISOString();
+            report.passed = report.tests.filter(t => t.ok).length;
+            report.failed = report.tests.filter(t => !t.ok).length;
+            console.log('E2E_REPORT=' + JSON.stringify(report));
+          }
+
+          if (report.failed || report.error) process.exitCode = 1;
+          NODE
+          result=$?
+          if [ "$result" -eq 0 ]; then
+            state=success
+            description="My Flash E2E passed"
+          else
+            state=failure
+            description="My Flash E2E failed"
+          fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" \
+            -f context="My Flash production E2E" \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" || true
+          exit "$result"
