@@ -216,7 +216,7 @@ jobs:
                   const r = await call('/api/files/' + encodeURIComponent(fileIds[0]), { cookie: cookieB });
                   const bytes = Buffer.from(await r.arrayBuffer());
                   check(r.status === 200, 'download HTTP ' + r.status);
-                  check(bytes.toString() === 'My Flash production E2E ' + suffix + '\\n', 'shared download bytes differ');
+                  check(bytes.toString() === 'My Flash production E2E ' + suffix + '\n', 'shared download bytes differ');
                   return 'user B downloaded exact file bytes';
                 });
 
